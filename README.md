@@ -19,6 +19,11 @@ Work-agnostic **manga expression patterns** — 「キャラクターごとに�
 - **冷酷/威圧** — 直立＋重い影(暗ビネット)＋太明朝の決め台詞 (`:cold-menace`)
 - **独白/地の文** — 明朝の囲み (`:monologue`/`:narration`)
 
+加えて `hume_manga_face_taxonomy.edn` は Hume AI の表情研究を制作向けに橋渡しする。
+現行の48表出次元を、目・眉・まぶた・瞳孔・視線・左右差・ハイライト・涙・口へ分解した
+26個の face rig に写像する。これは感情の読心ではない。Hume の値は「観察者からその表出に
+見える信頼度」、`:intensity` は漫画としての誇張量であり、両者を混同しない。
+
 ## モデル
 
 1 行分のスタイルは
@@ -59,6 +64,27 @@ archetype(キャラ類型) ← register(セリフ種別) ← expression-cue(感�
   {:panels [{:characters ["ガター"]
              :dialogue [{:speaker "ガター" :text "バカな！！" :intensity 1.0}]}]})
 ```
+
+### Hume 48次元 → 目・表情 rig
+
+```clojure
+(def F (e/load-face-taxonomy))
+
+(e/resolve-face F
+  {:profile {"Amusement" 0.70 "Joy" 0.69 "Interest" 0.58}
+   :intensity 0.8
+   :gaze :at-subject})
+;; => {:measurement :observer-interpretation-confidence
+;;     :dimensions [{:label "Amusement" :confidence 0.70 ...} ...] ; top 3を保持
+;;     :families {:play ... :attention ...}
+;;     :rig :laughing-closed
+;;     :eyes {:open ... :upper-lid :raised-arc :brow :outer-raised ...}
+;;     :mouth :open-laugh :scene-expression "Happy" :intensity 0.8}
+```
+
+目のレシピは `:open`（開眼量）、上下まぶた、眉、瞳孔比、虹彩比、視線、ハイライト、
+涙、左右差を持つ。Hume の上位1件だけに潰さず、既定で上位3次元と family 混合比を返す。
+文化・文脈・キャラクター固有の display rule は consumer 側で検証・上書きする。
 
 `register` 省略時は `infer-register` が本文から推定（`！！`→`:shout`、`（…）`→`:whisper`）。
 明示された `:bubble` / `:weight` / `:scale` は常に解決結果に勝つ。

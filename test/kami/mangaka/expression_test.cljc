@@ -1,8 +1,10 @@
 (ns kami.mangaka.expression-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [clojure.string :as str]
+            [clojure.test :refer [deftest is testing]]
             [kami.mangaka.expression :as e]))
 
 (def P (e/load-patterns))
+(def F (e/load-face-taxonomy))
 
 (deftest vocab-lockstep
   (testing "code vocab == edn :vocab (drift guard, manifest-matches-registry 流儀)"
@@ -29,6 +31,57 @@
   (is (= "Happy" (e/expression-of "喜")))
   (is (= "Determined" (e/expression-of "Determined")) "already-canonical passes through")
   (is (= "Neutral" (e/expression-of "???")) "unknown → Neutral"))
+
+(deftest hume-face-taxonomy-lockstep
+  (testing "Hume bridge contains the documented 48 dimensions"
+    (is (= 48 (count (:dimensions F))))
+    (is (= #{"Surprise (negative)" "Surprise (positive)"}
+           (set (filter #(str/starts-with? % "Surprise")
+                        (keys (:dimensions F)))))))
+  (testing "every dimension resolves to a known family and eye rig"
+    (doseq [[label {:keys [family rig]}] (:dimensions F)]
+      (is (contains? (:families F) family) label)
+      (is (contains? (:rigs F) rig) label)))
+  (testing "every rig is renderer-safe and maps to the existing scene enum"
+    (doseq [[rig {:keys [scene-expression eyes]}] (:rigs F)]
+      (is (e/expressions scene-expression) (name rig))
+      (is (<= 0.0 (:open eyes) 1.0) (name rig))
+      (is (contains? (get-in F [:eye-vocab :lid-curve]) (:upper-lid eyes)) (name rig))
+      (is (contains? (get-in F [:eye-vocab :lid-curve]) (:lower-lid eyes)) (name rig))
+      (is (contains? (get-in F [:eye-vocab :brow-shape]) (:brow eyes)) (name rig))
+      (is (contains? (get-in F [:eye-vocab :gaze]) (:gaze eyes)) (name rig))
+      (is (contains? (get-in F [:eye-vocab :highlight]) (:highlight eyes)) (name rig))
+      (is (contains? (get-in F [:eye-vocab :tear]) (:tear eyes)) (name rig)))))
+
+(deftest hume-profile-classification
+  (testing "confidence is normalized but remains separate from intensity"
+    (let [out (e/resolve-face F {:profile {"Joy" 0.69
+                                           "Amusement" 0.70
+                                           "Interest" 0.58
+                                           "Unknown future label" 0.99}
+                                 :intensity 0.25})]
+      (is (= :observer-interpretation-confidence (:measurement out)))
+      (is (= ["Amusement" "Joy" "Interest"]
+             (mapv :label (:dimensions out))))
+      (is (= :laughing-closed (:rig out)))
+      (is (= 0.25 (:intensity out)))
+      (is (not= 0.70 (:intensity out)))
+      (is (= #{:play :attention} (set (keys (:families out)))))))
+  (testing "mixtures are preserved instead of collapsing to a basic-six label"
+    (let [out (e/classify-hume-profile F {"Contempt" 0.61 "Amusement" 0.59 "Doubt" 0.42})]
+      (is (= 3 (count (:dimensions out))))
+      (is (< (:ambiguity out) 0.03))
+      (is (= #{:aversion :play :uncertainty} (set (keys (:families out)))))))
+  (testing "authored gaze overrides staging without changing classification"
+    (let [out (e/resolve-face F {:profile {"Fear" 0.9} :intensity 1.0 :gaze :side})]
+      (is (= :fear-wide (:rig out)))
+      (is (= :side (get-in out [:eyes :gaze])))
+      (is (= "Surprised" (:scene-expression out)))))
+  (testing "unknown/empty profile safely returns the neutral construction"
+    (let [out (e/resolve-face F {:profile {"Not a label" 1.0}})]
+      (is (= :neutral-soft (:rig out)))
+      (is (empty? (:dimensions out)))
+      (is (= "Neutral" (:scene-expression out))))))
 
 (deftest weight-ops
   (is (= 2 (e/weight-index :regular)))

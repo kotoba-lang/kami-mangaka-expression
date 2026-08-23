@@ -62,6 +62,9 @@
 ;; ---------------------------------------------------------------------------
 
 (def default-patterns-resource "mangaka_expression_patterns.edn")
+(def default-face-taxonomy-resource "hume_manga_face_taxonomy.edn")
+
+(declare clamp)
 
 ;; mangaka_expression_patterns.edn was datomic/datascript-ized by
 ;; edn-datomize.bb (wrap-map, ns="resources.mangaka-expression-patterns"):
@@ -96,6 +99,105 @@
      ([resource]
       (with-open [r (io/reader (io/resource resource))]
         (reconstitute-patterns (edn/read (java.io.PushbackReader. r)))))))
+
+#?(:clj
+   (defn load-face-taxonomy
+     "Load the Hume-grounded manga face/eye taxonomy. Values from Hume are
+     observer-interpretation confidences, never inferred inner emotion or
+     manga exaggeration intensity."
+     ([] (load-face-taxonomy default-face-taxonomy-resource))
+     ([resource]
+      (with-open [r (io/reader (io/resource resource))]
+        (edn/read (java.io.PushbackReader. r))))))
+
+;; ---------------------------------------------------------------------------
+;; Hume profile -> manga face. Keep measurement confidence and authored manga
+;; intensity separate: a 0.9 Hume score is not "90% intense emotion".
+;; ---------------------------------------------------------------------------
+
+(defn- dimension-index [taxonomy]
+  (into {} (map (fn [label] [(str/lower-case label) label]))
+        (keys (:dimensions taxonomy))))
+
+(defn normalize-hume-profile
+  "Normalize a Hume-style {label confidence} map to canonical labels and
+  finite [0,1] confidences. Unknown labels and non-numeric values are ignored."
+  [taxonomy profile]
+  (let [index (dimension-index taxonomy)]
+    (into {}
+          (keep (fn [[label confidence]]
+                  (let [canonical (get index (str/lower-case (name label)))]
+                    (when (and canonical (number? confidence)
+                               #?(:clj (Double/isFinite (double confidence))
+                                  :cljs (js/Number.isFinite confidence)))
+                      [canonical (clamp 0.0 1.0 (double confidence))]))))
+          profile)))
+
+(defn classify-hume-profile
+  "Return a loss-minimizing classification of a Hume expression profile.
+  `:dimensions` preserves the top N dimensions; `:families` aggregates all
+  supplied dimensions. Confidence is explicitly not treated as intensity."
+  ([taxonomy profile] (classify-hume-profile taxonomy profile 3))
+  ([taxonomy profile top-n]
+   (let [p       (normalize-hume-profile taxonomy profile)
+         ranked  (sort-by (comp - val) p)
+         dims    (mapv (fn [[label confidence]]
+                         (merge {:label label :confidence confidence}
+                                (get-in taxonomy [:dimensions label])))
+                       (take (max 1 (long top-n)) ranked))
+         sums    (reduce (fn [acc [label confidence]]
+                           (update acc (get-in taxonomy [:dimensions label :family])
+                                   (fnil + 0.0) confidence))
+                         {} p)
+         total   (reduce + 0.0 (vals sums))
+         families (if (pos? total)
+                    (into {} (map (fn [[k v]] [k (/ v total)])) sums)
+                    {})
+         first-confidence (or (:confidence (first dims)) 0.0)
+         second-confidence (or (:confidence (second dims)) 0.0)]
+     {:measurement :observer-interpretation-confidence
+      :dimensions dims
+      :families families
+      :dominant-rig (:rig (first dims))
+      :ambiguity (- first-confidence second-confidence)})))
+
+(defn- exaggerate
+  "Move a normalized control away from neutral by authored intensity."
+  [neutral value intensity]
+  (clamp 0.0 1.25 (+ neutral (* intensity (- value neutral)))))
+
+(defn resolve-face
+  "Resolve a Hume profile into renderer-independent manga face controls.
+
+  opts: {:profile {Hume-label confidence}
+         :intensity 0..1       ; authored exaggeration, NOT Hume confidence
+         :gaze keyword         ; optional staging override
+         :top-n 1..48}
+
+  The dominant rig provides categorical construction; the top dimensions and
+  normalized family mixture remain attached so a renderer/editor can expose
+  nuance instead of pretending there is a one-to-one emotion/face mapping."
+  [taxonomy {:keys [profile intensity gaze top-n]
+             :or {profile {} intensity 0.5 top-n 3}}]
+  (let [classification (classify-hume-profile taxonomy profile top-n)
+        rig-k (or (:dominant-rig classification) :neutral-soft)
+        rig   (or (get-in taxonomy [:rigs rig-k])
+                  (get-in taxonomy [:rigs :neutral-soft]))
+        neutral (get-in taxonomy [:rigs :neutral-soft :eyes])
+        i (clamp 0.0 1.0 (double intensity))
+        eyes (cond-> (:eyes rig)
+               true (assoc :open (exaggerate (:open neutral) (get-in rig [:eyes :open]) i)
+                           :pupil (exaggerate (:pupil neutral) (get-in rig [:eyes :pupil]) i)
+                           :iris (exaggerate (:iris neutral) (get-in rig [:eyes :iris]) i)
+                           :asymmetry (exaggerate (:asymmetry neutral)
+                                                  (get-in rig [:eyes :asymmetry]) i))
+               gaze (assoc :gaze gaze))]
+    (merge classification
+           {:rig rig-k
+            :scene-expression (:scene-expression rig)
+            :eyes eyes
+            :mouth (:mouth rig)
+            :intensity i})))
 
 ;; ---------------------------------------------------------------------------
 ;; Emotion → Expression (kami.mangaka.scene/expression-of と同表; scene は JVM の
