@@ -14,7 +14,7 @@
   ここは SEMANTIC タグだけを吐く純 cljc — 見た目への写像 (opacity/font-size/screentone)
   は renderer 側 (kami.mangaka.text の hiccup+CSS / kami.mangaka.page の Java2D) が持つ。
   babashka-safe / JVM・cljs・WASM 可搬 (host interop は reader-conditional のみ)。"
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             #?(:clj [clojure.edn :as edn])
             #?(:clj [clojure.java.io :as io])))
 
@@ -116,7 +116,7 @@
 ;; ---------------------------------------------------------------------------
 
 (defn- dimension-index [taxonomy]
-  (into {} (map (fn [label] [(str/lower-case label) label]))
+  (into {} (map (fn [label] [(str/lower label) label]))
         (keys (:dimensions taxonomy))))
 
 (defn normalize-hume-profile
@@ -126,7 +126,7 @@
   (let [index (dimension-index taxonomy)]
     (into {}
           (keep (fn [[label confidence]]
-                  (let [canonical (get index (str/lower-case (name label)))]
+                  (let [canonical (get index (str/lower (name label)))]
                     (when (and canonical (number? confidence)
                                #?(:clj (Double/isFinite (double confidence))
                                   :cljs (js/Number.isFinite confidence)))
@@ -209,7 +209,7 @@
   [name]
   (if (expressions name)
     name
-    (case (str/lower-case (str name))
+    (case (str/lower (str name))
       ("happy" "joy" "smile" "喜" "笑")        "Happy"
       ("angry" "rage" "怒" "激昂")             "Angry"
       ("sad" "sorrow" "grief" "哀" "悲")       "Sad"
