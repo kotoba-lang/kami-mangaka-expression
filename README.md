@@ -101,11 +101,11 @@ archetype(キャラ類型) ← register(セリフ種別) ← expression-cue(感�
 ## テスト
 
 ```bash
-clojure -M:test                  # vocab lock-step / resolve-style / analyze
-nbb scripts/run-task.cljk test   # the same suite through the task registry
+kbb -M:test                  # vocab lock-step / resolve-style / analyze
+kbb --backend sci scripts/run-task.cljk test   # the same suite through the task registry
 ```
 
-`bb test` を案内していたが、babashka は ADR-2607173000 で本 workspace の
+`kbb -M:test` を案内していたが、babashka は ADR-2607173000 で本 workspace の
 script host から退役している。同じ task は `scripts/tasks.edn` に復元済みで
 （ADR-2608131600）、上の nbb 形で起動する。実測 2026-08-13: 7 tests /
 104 assertions, 0 failures。
