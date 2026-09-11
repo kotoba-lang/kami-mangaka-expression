@@ -102,7 +102,7 @@ archetype(キャラ類型) ← register(セリフ種別) ← expression-cue(感�
 
 ```bash
 clojure -M:test                  # vocab lock-step / resolve-style / analyze
-nbb scripts/run-task.cljs test   # the same suite through the task registry
+nbb scripts/run-task.cljk test   # the same suite through the task registry
 ```
 
 `bb test` を案内していたが、babashka は ADR-2607173000 で本 workspace の
