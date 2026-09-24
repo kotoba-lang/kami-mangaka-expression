@@ -1,6 +1,6 @@
 (ns kami.mangaka.expression-test
   (:require [kotoba.lang.text :as str]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [kami.mangaka.expression :as e]))
 
 (def P (e/load-patterns))
