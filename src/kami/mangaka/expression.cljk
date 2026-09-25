@@ -16,7 +16,7 @@
   babashka-safe / JVM・cljs・WASM 可搬 (host interop は reader-conditional のみ)。"
   (:require [kotoba.lang.text :as str]
             #?(:clj [clojure.edn :as edn])
-            #?(:clj [clojure.java.io :as io])))
+            #?(:clj [kotoba.io :as io])))
 
 ;; ---------------------------------------------------------------------------
 ;; Vocabulary — the edn :vocab の canonical 版 (test で edn と lock-step)
